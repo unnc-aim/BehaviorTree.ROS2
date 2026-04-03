@@ -219,7 +219,11 @@ inline NodeStatus RosTopicPubStatefulActionNode<T>::onStart()
   }
   publisher_->publish(msg);
 
-  // Record start time
+  if(duration_ <= msec(0))
+  {
+    return NodeStatus::SUCCESS;
+  }
+
   start_time_ = node_->now();
   return NodeStatus::RUNNING;
 }
