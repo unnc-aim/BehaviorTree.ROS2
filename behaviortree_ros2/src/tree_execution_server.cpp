@@ -95,7 +95,17 @@ TreeExecutionServer::TreeExecutionServer(const rclcpp::Node::SharedPtr& node)
 }
 
 TreeExecutionServer::~TreeExecutionServer()
-{}
+{
+  waitForTreeExecution();
+}
+
+void TreeExecutionServer::waitForTreeExecution()
+{
+  if(p_->action_thread.joinable())
+  {
+    p_->action_thread.join();
+  }
+}
 
 void TreeExecutionServer::executeRegistration()
 {
@@ -155,10 +165,7 @@ void TreeExecutionServer::handle_accepted(
     const std::shared_ptr<GoalHandleExecuteTree> goal_handle)
 {
   // Join the previous execute thread before replacing it with a new one
-  if(p_->action_thread.joinable())
-  {
-    p_->action_thread.join();
-  }
+  waitForTreeExecution();
   // To avoid blocking the executor start a new thread to process the goal
   p_->action_thread = std::thread{ [=]() { execute(goal_handle); } };
 }
@@ -167,8 +174,27 @@ void TreeExecutionServer::execute(
     const std::shared_ptr<GoalHandleExecuteTree> goal_handle)
 {
   const auto goal = goal_handle->get_goal();
+  const auto context = node_->get_node_base_interface()->get_context();
   BT::NodeStatus status = BT::NodeStatus::RUNNING;
   auto action_result = std::make_shared<ExecuteTree::Result>();
+
+  // Finish the goal state before releasing its handle.
+  auto abort_action = [&]() {
+    if(goal_handle->is_active())
+    {
+      try
+      {
+        goal_handle->abort(action_result);
+      }
+      catch(const std::exception& ex)
+      {
+        if(rclcpp::ok(context))
+        {
+          RCLCPP_ERROR(kLogger, "Action result error: %s", ex.what());
+        }
+      }
+    }
+  };
 
   // Before executing check if we have new Behaviors or Subtrees to reload
   if(p_->param_listener->is_old(p_->params))
@@ -218,7 +244,7 @@ void TreeExecutionServer::execute(
       RCLCPP_WARN(kLogger, action_result->return_message.c_str());
     };
 
-    while(rclcpp::ok() && status == BT::NodeStatus::RUNNING)
+    while(rclcpp::ok(context) && status == BT::NodeStatus::RUNNING)
     {
       if(goal_handle->is_canceling())
       {
@@ -233,7 +259,7 @@ void TreeExecutionServer::execute(
       if(const auto res = onLoopAfterTick(status); res.has_value())
       {
         stop_action(res.value(), "Action Server aborted by onLoopAfterTick()");
-        goal_handle->abort(action_result);
+        abort_action();
         return;
       }
 
@@ -252,12 +278,24 @@ void TreeExecutionServer::execute(
       }
       loop_deadline += period;
     }
+
+    if(!rclcpp::ok(context))
+    {
+      abort_action();
+      p_->tree.haltTree();
+      return;
+    }
   }
   catch(const std::exception& ex)
   {
+    if(!rclcpp::ok(context))
+    {
+      abort_action();
+      return;
+    }
     action_result->return_message = std::string("Behavior Tree exception:") + ex.what();
     RCLCPP_ERROR(kLogger, action_result->return_message.c_str());
-    goal_handle->abort(action_result);
+    abort_action();
     return;
   }
 
@@ -277,15 +315,25 @@ void TreeExecutionServer::execute(
   action_result->node_status = ConvertNodeStatus(status);
 
   // return success or aborted for the action result
-  if(status == BT::NodeStatus::SUCCESS)
+  try
   {
-    RCLCPP_INFO(kLogger, action_result->return_message.c_str());
-    goal_handle->succeed(action_result);
+    if(status == BT::NodeStatus::SUCCESS)
+    {
+      RCLCPP_INFO(kLogger, action_result->return_message.c_str());
+      goal_handle->succeed(action_result);
+    }
+    else
+    {
+      RCLCPP_ERROR(kLogger, action_result->return_message.c_str());
+      abort_action();
+    }
   }
-  else
+  catch(const std::exception& ex)
   {
-    RCLCPP_ERROR(kLogger, action_result->return_message.c_str());
-    goal_handle->abort(action_result);
+    if(rclcpp::ok(context))
+    {
+      RCLCPP_ERROR(kLogger, "Action result error: %s", ex.what());
+    }
   }
 }
 

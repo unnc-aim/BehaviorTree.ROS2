@@ -50,6 +50,9 @@ public:
 
   virtual ~TreeExecutionServer();
 
+  /// @brief Wait for current tree execution to finish.
+  void waitForTreeExecution();
+
   /**
    * @brief Gets the NodeBaseInterface of node_.
    * @details This function exists to allow running TreeExecutionServer as a component in a composable node container.
