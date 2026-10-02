@@ -56,4 +56,15 @@ install(
 ament_export_include_directories(include)
 ament_export_libraries(${PROJECT_NAME})
 
+if(BUILD_TESTING) # 由构建参数控制是否生成模拟 Action 回归程序。
+  enable_testing() # 注册下方 add_test 定义的 CTest 检查。
+  add_executable(test_action_lifecycle test/test_action_lifecycle.cpp) # 编译现有 Sleep 接口的模拟检查。
+  target_include_directories(test_action_lifecycle PRIVATE include) # 测试直接包含本次修改的模板头文件。
+  ament_target_dependencies(test_action_lifecycle ${THIS_PACKAGE_DEPS}) # 复用包内已有依赖。
+  add_test(NAME action_lifecycle COMMAND test_action_lifecycle) # 一个程序覆盖反馈、取消及生命周期。
+  set_tests_properties(action_lifecycle PROPERTIES
+    TIMEOUT 30 # 运行超过 30 秒时由 CTest 结束检查。
+    ENVIRONMENT "ROS_DOMAIN_ID=188;ROS_LOCALHOST_ONLY=1;ROS_LOG_DIR=${CMAKE_CURRENT_BINARY_DIR}/test_ros_logs") # 使用独立域和本地日志目录。
+endif()
+
 ament_package()

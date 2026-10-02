@@ -30,3 +30,4 @@
 *.exe
 *.out
 *.app
+/behaviortree_ros2/test/
