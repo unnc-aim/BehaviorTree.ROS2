@@ -83,12 +83,17 @@ template <class ActionT>
 class RosActionNode : public BT::ActionNodeBase
 {
 public:
-  // Type definitions
+  // Type definitions 类型别名定义
   using ActionType = ActionT;
   using ActionClient = typename rclcpp_action::Client<ActionT>;
   using ActionClientPtr = std::shared_ptr<ActionClient>;
   using Goal = typename ActionT::Goal;
+
+  // rclcpp_action: ros2 action相关类型所在的命名空间
+  // ClientGoalHandle: 客户端的目标句柄的类模板
+  // 句柄是c++中用于间接引用、访问、管理特定对象的抽象实体，一般被封装为一个专用的类
   using GoalHandle = typename rclcpp_action::ClientGoalHandle<ActionT>;
+
   using WrappedResult = typename rclcpp_action::ClientGoalHandle<ActionT>::WrappedResult;
   using Feedback = typename ActionT::Feedback;
 
@@ -99,7 +104,11 @@ public:
    */
   explicit RosActionNode(const std::string& instance_name, const BT::NodeConfig& conf,
                          const RosNodeParams& params);
-
+  
+  // 原写法：virtual ~RosActionNode() = default;
+  // 移除virtual是因为基类析构函数已经是虚函数，派生类的析构函数会保持虚函数性质，无需额外说明
+  // 改成override会要求编译器检查派生类的析构确实覆盖了基类的虚函数
+  // 移除default是因为这里不使用编译器生成的默认实现，后续有自定义析构函数体
   ~RosActionNode() override;  // override 表示覆盖虚析构；销毁时交接未完成目标。
 
   /**
@@ -178,16 +187,17 @@ protected:
   // 每次发送独立保存状态；ROS 回调只访问这份状态，避免引用已销毁的 BT 节点。
   struct RequestState
   {
+    // 
     typename GoalHandle::SharedPtr handle;  // typename 指明依赖模板参数的句柄类型。
-    WrappedResult result{};                // {} 将结果初始化为 UNKNOWN。
+    WrappedResult result{};                 // {} 将结果初始化为 UNKNOWN。
     std::vector<std::shared_ptr<const Feedback>> feedback;  // 保留反馈顺序，供 tick 调用虚函数。
-    std::chrono::steady_clock::time_point sent_at;  // 单调时间记录本次发送时刻。
-    NodeStatus feedback_status = NodeStatus::RUNNING;  // 保存 onFeedback 请求的结束状态。
-    bool response_received = false;  // 接受或拒绝响应均设置为 true。
-    bool timed_out = false;          // 记录本次响应等待已经超时。
-    bool cancel_requested = false;  // 即使句柄尚未到达，也保留取消意图。
-    bool cancel_sent = false;       // 每个目标只提交一次取消请求。
-    bool finished = false;          // 收到拒绝或最终结果后结束本次请求。
+    std::chrono::steady_clock::time_point sent_at;          // 单调时间记录本次发送时刻。
+    NodeStatus feedback_status = NodeStatus::RUNNING;       // 保存 onFeedback 请求的结束状态。
+    bool response_received = false;   // 接受或拒绝响应均设置为 true。
+    bool timed_out = false;           // 记录本次响应等待已经超时。
+    bool cancel_requested = false;    // 即使句柄尚未到达，也保留取消意图。
+    bool cancel_sent = false;         // 每个目标只提交一次取消请求。
+    bool finished = false;            // 收到拒绝或最终结果后结束本次请求。
   };
 
   // enable_shared_from_this 允许取消定时器在 BT 节点结束后继续持有客户端。
@@ -686,3 +696,15 @@ inline void RosActionNode<T>::cancelGoal()
 }
 
 }  // namespace BT
+
+
+/*
+有一句心里话想要说给你~
+sxy就是你最可爱的你~
+喜欢你喜欢你就是喜欢你~
+翻过山越过海你就是唯一~
+有了你生命里全都是奇迹~
+失去你不再有燃烧的意义~
+让我们在一起倔强游戏~
+全世界所有人我最喜欢你！
+*/
